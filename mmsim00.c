@@ -7,6 +7,10 @@
 #define SECTION (180)
 #define GOAL_X (7)
 #define GOAL_Y (7)
+//#define WIDTH (2892)
+//#define HEIGHT (2892)
+#define WIDTH (180*5+12)
+#define HEIGHT (180*5+12)
 
 void make_mapdata(void);
 void reset_map(void);
@@ -34,6 +38,10 @@ void left_turn(void);
 void turn180(void);
 void mode0(void);
 void calc_trajectry(void);
+void output_to_img(double *x, double *y, double angle, int cnt, double *red, double *green, double *blue);
+void draw_traj(int n, double *x , double *y , double *red, double *green, double *blue);
+void erase_traj(int n, double *x , double *y , double *red, double *green, double *blue);
+
 
 //2019+alpha Clasic mouse expart final maze
 char maze[33][66]={
@@ -93,43 +101,68 @@ char folder[]="imgx";
 cairo_surface_t *CS;
 cairo_t *C;
 
-void output_to_img(double x, double y, double angle)
+void output_to_img(double *x, double *y, double angle, int cnt, double *red, double *green, double *blue)
 {
   char str[50];
   sprintf(str,"%s/test%05d.png",folder, Index);
-  draw_mouse(x, y, angle);
+  draw_traj(cnt, x, y , red, green, blue);
+  draw_mouse(x[cnt], y[cnt], angle);
   cairo_surface_write_to_png( CS, str );
-  erase_mouse(x, y, angle);
+  erase_mouse(x[cnt], y[cnt], angle);
+  erase_traj(cnt, x, y , red, green, blue);
   Index++;
 }
 
 void calc_trajectry(void)
 {
-  double x = (180*16+12)/2;
-  double y = 180*2+90.0;
+  double acc0=9800.0;
+  double angle_acc0 = M_PI*5;
+  double acc=0.0;
+  double angle_acc=0.0;
+  double x = 90.0;
+  double y = 90.0;
   double angle = 0.0;
-  double v = 3000.0;
-  double omega = M_PI;
+  double v = 600.0;
+  double omega = 0.0;
   double t=0.0;
   double h=0.001;
   double fin=2.0;
   double framerate=60.0;
   double sample_time = 0.0;
+  double datax[1000];
+  double datay[1000];
+  int logcnt=0;
+  double red[1000], green[1000], blue[1000];
 
   cairo_set_source_rgb( C, 0, 0, 0 );
-  cairo_rectangle( C, 0, 0, 180*16+12, 180*16+12 );
+  cairo_rectangle( C, 0, 0, WIDTH, HEIGHT );
   cairo_fill( C );
 
+  
   while(t<fin)
   {
     if(t>=sample_time){
-      printf("%f %f\n", x, y);
+      printf("%f %f %f\n", x, y, omega);
+      datax[logcnt]=x;
+      datay[logcnt]=y;
+    
       sample_time = sample_time + 1/framerate;
-      output_to_img(x, y, angle);
+     
+      output_to_img(datax, datay, angle, logcnt, red, green, blue);
+      logcnt++;
     }
-    angle = angle + omega*h;
-    x=rk4(x_dot_2, x, t, h, 2, v, angle);
-    y=rk4(y_dot_2, y, t, h, 2, v, angle);
+    red[logcnt]=1.0;green[logcnt]=1.0;blue[logcnt]=0.0;
+    if(t>0.1){angle_acc=angle_acc0;red[logcnt]=1.0;green[logcnt]=0.0;blue[logcnt]=0.0;}
+    if(t>0.3){angle_acc=0.0;red[logcnt]=0.0;green[logcnt]=1.0;blue[logcnt]=0.0;}
+    if(t>0.5){angle_acc=-angle_acc0;red[logcnt]=0.0;green[logcnt]=0.0;blue[logcnt]=1.0;}
+    if(t>0.7){angle_acc=0.0;red[logcnt]=1.0;green[logcnt]=1.0;blue[logcnt]=0.0;}
+
+    x = rk4(x_dot_2, x, t, h, 2, v, angle);
+    y = rk4(y_dot_2, y, t, h, 2, v, angle);
+    angle = rk4(psi_dot_1, angle, t, h, 1, omega);
+    omega = rk4(r_rate_dot_1, omega, t, h, 1, angle_acc); 
+    v = rk4(v_dot_1, v, t, h, 1, acc );
+
     t=t+h;
   }
   
@@ -276,6 +309,33 @@ void draw_h_wall(int x, int y)
 
 }
 
+
+void draw_traj(int n, double *x , double *y , double *red, double *green, double *blue)
+{
+  cairo_set_source_rgb( C, 1, 0.5, 0);
+  cairo_set_line_width( C, 1);
+  cairo_move_to( C, (x[0]+6), (HEIGHT-y[0]-6) );
+  for (int i=1; i<n; i++)
+  {
+    cairo_line_to( C, (x[i]+6), (HEIGHT-y[i]-6) );
+
+  }
+  cairo_stroke( C );
+}
+
+void erase_traj(int n, double *x , double *y , double *red, double *green, double *blue)
+{
+  cairo_set_source_rgb( C, 0, 0, 0);
+  cairo_set_line_width( C, 3);
+  cairo_move_to( C, (x[0]+6), (HEIGHT-y[0]-6) );
+  for (int i=1; i<n; i++)
+  {
+    cairo_line_to( C, (x[i]+6), (HEIGHT-y[i]-6) );
+
+  }
+  cairo_stroke( C );
+}
+
 void draw_mouse(double x, double y, double angle)
 {
   double x1 = -35.0;
@@ -303,11 +363,11 @@ void draw_mouse(double x, double y, double angle)
 
   cairo_set_source_rgb( C, 0, 1, 0 );
   cairo_set_line_width( C, 1);
-  cairo_move_to( C, (int)(x1_+6), (int)(180*16+12-y1_-6) );
-  cairo_line_to( C, (int)(x2_+6), (int)(180*16+12-y2_-6) );
-  cairo_line_to( C, (int)(x3_+6), (int)(180*16+12-y3_-6) );
-  cairo_line_to( C, (int)(x4_+6), (int)(180*16+12-y4_-6) );
-  cairo_line_to( C, (int)(x5_+6), (int)(180*16+12-y5_-6) );
+  cairo_move_to( C, (x1_+6), (HEIGHT-y1_-6) );
+  cairo_line_to( C, (x2_+6), (HEIGHT-y2_-6) );
+  cairo_line_to( C, (x3_+6), (HEIGHT-y3_-6) );
+  cairo_line_to( C, (x4_+6), (HEIGHT-y4_-6) );
+  cairo_line_to( C, (x5_+6), (HEIGHT-y5_-6) );
   cairo_close_path( C );
   cairo_fill(C);
   cairo_stroke( C );
@@ -320,7 +380,7 @@ void erase_mouse(double x, double y, double angle)
   y = y + 80;
   //画像座標系へ変換
   x = x + 6;
-  y= 180*16+6 - y;
+  y=  HEIGHT- y - 6;
   cairo_set_source_rgb( C, 0, 0, 0 );
   cairo_rectangle( C, x, y, 160, 160);
   cairo_fill( C );
@@ -776,8 +836,8 @@ void mode1(void)
 
 int main(int argc, char** argv)
 {
-  int width = 180*16 + 12, height = 180*16 + 12;
-  CS = cairo_image_surface_create( CAIRO_FORMAT_ARGB32, width, height );
+  //int width = 392, height = 392;
+  CS = cairo_image_surface_create( CAIRO_FORMAT_ARGB32, WIDTH, HEIGHT );
   C = cairo_create( CS );
   
   //Start
